@@ -20,6 +20,9 @@ jobs:
     
     - name: Build
       run: cargo +nightly build --verbose --release
+
+    - name: Print directory
+      run: find .
       
     - name: Get short commit SHA
       uses: benjlevesque/short-sha@v1.2
@@ -30,5 +33,5 @@ jobs:
       with:
         name: ${{ steps.short-sha.outputs.sha }}.zip
         path: |
-            target/release/polycomb.*
-            !target/release/polycomb.d
+            target/release/libpolycomb.*
+            !target/release/libpolycomb.d
