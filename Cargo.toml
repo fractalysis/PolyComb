@@ -1,5 +1,5 @@
 [package]
-name = "phaseys"
+name = "polycomb"
 version = "0.1.0"
 edition = "2021"
 
@@ -12,6 +12,6 @@ ringbuf = "*"
 num = "*"
 
 [lib]
-name = "phaseys"
+name = "polycomb"
 path = "src/plugin.rs"
 crate-type = ["cdylib"]
