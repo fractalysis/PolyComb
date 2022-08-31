@@ -248,4 +248,5 @@ impl MidiReceiver for Phasey {
     }
 }
 
+#[cfg(not(test))]
 baseplug::vst2!(Phasey, b"FRps");

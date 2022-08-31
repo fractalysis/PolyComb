@@ -5,7 +5,7 @@ use baseplug::Smooth;
 use envelope::Envelope;
 use delayline::DelayLine;
 
-//const MAX_BLOCKSIZE: usize = 128; // make soto fix this lol
+const MAX_SPEED: f32 = 2.0f32; // Allowed to go up to twice as fast
 
 pub struct MidiVoice {
     sample_rate: f32,
@@ -28,8 +28,8 @@ impl MidiVoice {
             note: 0,
             velocity: 0.0f32,
             target_delay: Smooth::new(0.0f32),
-            delay_l: DelayLine::new(max_bufsize as usize),
-            delay_r: DelayLine::new(max_bufsize as usize),
+            delay_l: DelayLine::new(max_bufsize as usize, MAX_SPEED),
+            delay_r: DelayLine::new(max_bufsize as usize, MAX_SPEED),
             env: Envelope::new(),
 
             //scratch_buffer: [0; MAX_BLOCKSIZE],
