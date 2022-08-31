@@ -6,6 +6,7 @@ use ringbuf::{Consumer, Producer, RingBuffer};
 
 fn slice_pair_index(slice_1: &[f32], slice_2: &[f32], index: usize) -> f32{
     let use_slice_2 = index >= slice_1.len();
+    print!("AAA {use_slice_2}\n");
     let slice = if use_slice_2 { slice_2 } else { slice_1 };
     let index_mod = index % slice_1.len();
     return slice[index_mod];
@@ -69,11 +70,17 @@ impl DelayLine<f32> {
 
         let mut current_bufsize = self.px.len();
 
-        let mut delta_bufsize = target_bufsize - self.last_bufsize;
+        //if current_bufsize <= 2 { return 0.0f32 }
         // CASE 1: buffer still accumulating, first sample has not played yet
-        if self.last_bufsize == 0.0f32 && current_bufsize < target_bufsize.ceil() as usize { return 0.0f32 }
+        if self.last_bufsize == 0.0f32 && current_bufsize < (target_bufsize.ceil() as usize) { return 0.0f32 }
+        // Or it might be done accumulating
+        else if self.last_bufsize == 0.0f32 { self.last_bufsize = target_bufsize } 
+
+        let mut delta_bufsize = target_bufsize - self.last_bufsize;
+        
+        
         // CASE 2: delta_bufsize < 0, buffer shrinking, we have plenty of samples but don't go too fast
-        else if delta_bufsize < -self.max_speed { delta_bufsize = -self.max_speed; }
+        if delta_bufsize < -self.max_speed { delta_bufsize = -self.max_speed; }
         // CASE 3: delta_bufsize > 0, buffer increasing, we don't have enough samples so just move over by 1
         else if delta_bufsize > 1.0f32 { delta_bufsize = 1.0f32 }
         // CASE 4: delta_bufsize = 0, we chillin
@@ -81,21 +88,11 @@ impl DelayLine<f32> {
         let next_bufsize = self.last_bufsize + delta_bufsize;
         let next_bufsize_ceil = next_bufsize.ceil() as usize;
 
-        // ASSERTIONS
-        if delta_bufsize < 0.0f32 {
-            assert!( (current_bufsize - 1 - next_bufsize_ceil) as f32 <= self.max_speed, "CASE 2" );
-        }
-        else if delta_bufsize > 0.0f32 {
-            assert!( next_bufsize_ceil - (current_bufsize - 1) <= 1, "CASE 3" );
-        }
-        else if delta_bufsize == 0.0f32 {
-            assert!( next_bufsize_ceil - current_bufsize - 1 == 0, "CASE 4" );
-        }
-
         while current_bufsize > next_bufsize_ceil {
             let _ = self.cx.pop();
             current_bufsize -= 1;
         }
+        self.last_bufsize = next_bufsize;
 
         let slices = self.cx.as_slices();
         let relevant_samples = (
@@ -124,22 +121,52 @@ impl DelayLine<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs::File;
+    use std::path::Path;
+    use wav;
 
     #[test]
     fn it_works() {
         let mut delay_1 = DelayLine::new(44100, 2.0f32);
-        
+        let mut samples = Vec::new();
+
         for _i in 0..4000 {
-            delay_1.pop(1000f32);
+            samples.push( delay_1.pop(1000f32) );
+            delay_1.push(0.0f32);
+            samples.push( delay_1.pop(1000f32) );
             delay_1.push(1.0f32);
+            samples.push( delay_1.pop(1000f32) );
+            delay_1.push(0.0f32);
+            samples.push( delay_1.pop(1000f32) );
+            delay_1.push(-1.0f32);
         }
         for _i in 0..4000 {
-            delay_1.pop(500f32);
+            samples.push( delay_1.pop(500f32) );
+            delay_1.push(0.0f32);
+            samples.push( delay_1.pop(500f32) );
             delay_1.push(1.0f32);
+            samples.push( delay_1.pop(500f32) );
+            delay_1.push(0.0f32);
+            samples.push( delay_1.pop(500f32) );
+            delay_1.push(-1.0f32);
         }
         for _i in 0..4000 {
-            delay_1.pop(2000f32);
+            samples.push( delay_1.pop(44100f32) );
+            delay_1.push(0.0f32);
+            samples.push( delay_1.pop(44100f32) );
             delay_1.push(1.0f32);
+            samples.push( delay_1.pop(44100f32) );
+            delay_1.push(0.0f32);
+            samples.push( delay_1.pop(44100f32) );
+            delay_1.push(-1.0f32);
         }
+
+        let mut out_file = File::create(Path::new("test.wav")).unwrap();
+        wav::write( wav::header::Header::new(
+            wav::WAV_FORMAT_IEEE_FLOAT,
+            1,
+            44100,
+            32
+        ), &wav::BitDepth::from(samples), &mut out_file ).unwrap();
     }
 }

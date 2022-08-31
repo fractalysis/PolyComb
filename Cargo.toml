@@ -10,6 +10,7 @@ serde = {version = "*", default-features = false}
 baseplug = { git = "https://github.com/wrl/baseplug.git", package = "baseplug" }
 ringbuf = "*"
 num = "*"
+wav = "*"
 
 [lib]
 name = "polycomb"
