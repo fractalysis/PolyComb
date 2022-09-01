@@ -1,12 +1,12 @@
 extern crate num;
 extern crate ringbuf;
 
+use baseplug::Smooth;
 use ringbuf::{Consumer, Producer, RingBuffer};
 
 
 fn slice_pair_index(slice_1: &[f32], slice_2: &[f32], index: usize) -> f32{
     let use_slice_2 = index >= slice_1.len();
-    print!("AAA {use_slice_2}\n");
     let slice = if use_slice_2 { slice_2 } else { slice_1 };
     let index_mod = index % slice_1.len();
     return slice[index_mod];
@@ -21,6 +21,7 @@ pub struct DelayLine<T> {
     px: Producer<T>,
 
     last_bufsize: f32,
+    speed: Smooth<f32>,
     max_speed: f32
 }
 
@@ -28,77 +29,56 @@ impl DelayLine<f32> {
     // max_speed is the amount of samples we're allowed to skip in 1 read
     // 0 means no max speed
     pub fn new(bufsize: usize, max_speed: f32) -> Self {
-        let (px, cx) = RingBuffer::new(bufsize).split();
+        let (px, cx) = RingBuffer::new(bufsize + 1).split();
         
-        Self { cx, px, last_bufsize: 0.0f32, max_speed }
+        Self { cx, px, 
+            last_bufsize: 0.0f32, 
+            speed: Smooth::new(0.0f32),
+            max_speed
+        }
     }
     
     pub fn push(&mut self, x: f32) {
         let _ = self.px.push(x);
     }
 
-    /*pub fn pop(&mut self, target_bufsize: f32) -> f32 {
-        let target_bufsize_int = target_bufsize.ceil() as usize;
-        let mut current_bufsize = self.px.len();
-
-        while current_bufsize > target_bufsize_int {
-
-            let _ = self.cx.pop();
-
-            // For some reason this has even more zipper noise??
-            /*self.last_output = match self.cx.pop() {
-                Some(x) => x,
-                None => 0.0f32,
-            };*/
-            current_bufsize -= 1;
-        }
-        let mut delayed = 0.0f32;
-        if current_bufsize == target_bufsize_int {
-            delayed = match self.cx.pop() {
-                Some(x) => x,
-                None => 0.0f32,
-            };
-        }
-
-        let return_value = self.lerp(self.last_output, delayed, target_bufsize_int as f32 - target_bufsize);
-        self.last_output = delayed;
-
-        return_value
-    }*/
-
     pub fn pop(&mut self, target_bufsize: f32) -> f32{
+        if self.cx.is_full() {
+            let _ = self.cx.pop();
+        }
 
-        let mut current_bufsize = self.px.len();
-
-        //if current_bufsize <= 2 { return 0.0f32 }
+        let target_bufsize_ceil = target_bufsize.ceil() as usize;
+        
         // CASE 1: buffer still accumulating, first sample has not played yet
-        if self.last_bufsize == 0.0f32 && current_bufsize < (target_bufsize.ceil() as usize) { return 0.0f32 }
+        if self.last_bufsize == 0.0f32 && self.cx.len() < target_bufsize_ceil { return 0.0f32 }
         // Or it might be done accumulating
         else if self.last_bufsize == 0.0f32 { self.last_bufsize = target_bufsize } 
 
         let mut delta_bufsize = target_bufsize - self.last_bufsize;
         
-        
         // CASE 2: delta_bufsize < 0, buffer shrinking, we have plenty of samples but don't go too fast
         if delta_bufsize < -self.max_speed { delta_bufsize = -self.max_speed; }
-        // CASE 3: delta_bufsize > 0, buffer increasing, we don't have enough samples so just move over by 1
-        else if delta_bufsize > 1.0f32 { delta_bufsize = 1.0f32 }
+        // CASE 3: delta_bufsize > 0, buffer increasing
+        else if delta_bufsize > self.max_speed { delta_bufsize = self.max_speed }
         // CASE 4: delta_bufsize = 0, we chillin
+
+        // some wack stuff happens if we don't have enough samples for case 3
+        // but they should be pushing one sample every time before calling this
+        if self.last_bufsize + delta_bufsize > self.cx.len() as f32 {
+            delta_bufsize = 1.0f32;
+        }
 
         let next_bufsize = self.last_bufsize + delta_bufsize;
         let next_bufsize_ceil = next_bufsize.ceil() as usize;
-
-        while current_bufsize > next_bufsize_ceil {
-            let _ = self.cx.pop();
-            current_bufsize -= 1;
-        }
-        self.last_bufsize = next_bufsize;
+        let next_index = self.cx.len() - next_bufsize_ceil;
 
         let slices = self.cx.as_slices();
         let relevant_samples = (
-            slice_pair_index(slices.0, slices.1, 0),
-            slice_pair_index(slices.0, slices.1, 1)
+            slice_pair_index(slices.0, slices.1, next_index),
+            slice_pair_index(slices.0, slices.1, next_index + 1)
         );
+
+        self.last_bufsize = next_bufsize;
         return lerp(relevant_samples.1, relevant_samples.0, next_bufsize_ceil as f32 - next_bufsize);
     }
 
