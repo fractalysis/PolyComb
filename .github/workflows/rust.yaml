@@ -28,10 +28,10 @@ jobs:
       uses: actions/checkout@v2
       with:
         repository: RustAudio/vst-rs
-        path: osx_vst_bundler.sh
+        path: vst-rs
 
     - name: Bundle VST2
-      run: ./osx_vst_bundler.sh polycomb target/release/libpolycomb.dylib
+      run: ./vst-rs/osx_vst_bundler.sh polycomb target/release/libpolycomb.dylib
       
     - name: Get short commit SHA
       uses: benjlevesque/short-sha@v1.2
