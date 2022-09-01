@@ -23,6 +23,10 @@ jobs:
 
     - name: Print directory
       run: find .
+
+    - name: Bundle VST2
+      uses: RustAudio/vst-rs
+      run: ./osx_vst_bundler.sh polycomb target/release/libpolycomb.dylib
       
     - name: Get short commit SHA
       uses: benjlevesque/short-sha@v1.2
@@ -32,6 +36,4 @@ jobs:
       uses: actions/upload-artifact@v2
       with:
         name: ${{ steps.short-sha.outputs.sha }}.zip
-        path: |
-            target/release/libpolycomb.*
-            !target/release/libpolycomb.d
+        path: polycomb.vst
