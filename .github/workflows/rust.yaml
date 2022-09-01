@@ -24,8 +24,13 @@ jobs:
     - name: Print directory
       run: find .
 
+    - name: Get bundler
+      uses: actions/checkout@v2
+      with:
+        repository: RustAudio/vst-rs
+        path: osx_vst_bundler.sh
+
     - name: Bundle VST2
-      uses: RustAudio/vst-rs
       run: ./osx_vst_bundler.sh polycomb target/release/libpolycomb.dylib
       
     - name: Get short commit SHA
