@@ -11,6 +11,8 @@ baseplug = { git = "https://github.com/wrl/baseplug.git", package = "baseplug" }
 ringbuf = "*"
 num = "*"
 wav = "*"
+fundsp = "0.15.0"
+typenum = "1.17.0"
 
 [lib]
 name = "polycomb"

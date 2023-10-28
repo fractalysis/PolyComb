@@ -89,6 +89,9 @@ struct Phasey {
     damper_stop_queue: Vec<u8>,
     pitch_bend: Smooth<f32>,
 
+    previous_sample_l: f32,
+    previous_sample_r: f32
+
     //scratch_buffer: [[f32; MAX_BLOCKSIZE]; 2], // baseplug::MAX_BLOCKSIZE
     //temp_output: [[f32; MAX_BLOCKSIZE]; 2], // baseplug::MAX_BLOCKSIZE
 }
@@ -113,6 +116,9 @@ impl Plugin for Phasey {
             damper: false,
             damper_stop_queue: vec![],
             pitch_bend,
+
+            previous_sample_l: 0.,
+            previous_sample_r: 0.
 
             //scratch_buffer: [[0.0f32; MAX_BLOCKSIZE]; 2], // Should be baseplug::MAX_BLOCKSIZE
             //temp_output: [[0.0f32; MAX_BLOCKSIZE]; 2], // Should be baseplug::MAX_BLOCKSIZE
@@ -159,27 +165,25 @@ impl Plugin for Phasey {
 
         for i in 0..ctx.nframes {
 
-            let mut delayed_l = 0.0;
-            let mut delayed_r = 0.0;
             for v in 0..MAX_POLYPHONY {
                 if self.voices[v].is_playing() {
                     self.voices[v].set_portamento(ctx.sample_rate, model.portamento[i]);
 
-                    let t = self.voices[v].read( self.pitch_bend[i]*model.pitch_bend_range[i] );
-                    delayed_l += t.0;
-                    delayed_r += t.1;
-
-                    self.voices[v].push(
-                        input[0][i] + delayed_l * model.feedback[i],
-                        input[1][i] + delayed_r * model.feedback[i]
+                    let t = self.voices[v].tick(
+                        input[0][i] + self.previous_sample_l * model.feedback[i],
+                        input[1][i] + self.previous_sample_r * model.feedback[i],
+                        self.pitch_bend[i]*model.pitch_bend_range[i]
                     );
+
+                    self.previous_sample_l += t.0;
+                    self.previous_sample_r += t.1;
 
                 }
             }
 
             // Mix to outputs
-            output[0][i] = input[0][i] * model.dry[i] + delayed_l * model.wet[i];
-            output[1][i] = input[1][i] * model.dry[i] + delayed_r * model.wet[i];
+            output[0][i] = input[0][i] * model.dry[i] + self.previous_sample_l * model.wet[i];
+            output[1][i] = input[1][i] * model.dry[i] + self.previous_sample_r * model.wet[i];
         }
     }
 }

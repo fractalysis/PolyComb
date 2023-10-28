@@ -1,19 +1,18 @@
 #[path = "envelope.rs"] mod envelope;
-#[path = "delayline.rs"] mod delayline;
 
 use baseplug::Smooth;
 use envelope::Envelope;
-use delayline::DelayLine;
+use fundsp::{delay, audionode::Frame, prelude::AudioNode};
+use typenum::U1;
 
-const MAX_SPEED: f32 = 2.0f32; // Allowed to go up to twice as fast
 
 pub struct MidiVoice {
     sample_rate: f32,
     note: u8,
     velocity: f32,
     target_delay: Smooth<f32>, // In seconds
-    delay_l: DelayLine<f32>,
-    delay_r: DelayLine<f32>,
+    delay_l: delay::Tap<U1,f32>,
+    delay_r: delay::Tap<U1,f32>,
     env: Envelope,
 
     //scratch_buffer: [usize; MAX_BLOCKSIZE], // To get the target_bufsize for the delaylines
@@ -21,19 +20,23 @@ pub struct MidiVoice {
 
 impl MidiVoice {
     pub fn new(max_delay: f32, sample_rate: f32) -> Self {
-        let max_bufsize = (max_delay / 1000.0f32 * sample_rate).ceil() as usize;
 
-        MidiVoice {
+        let mut ret = MidiVoice {
             sample_rate,
             note: 0,
             velocity: 0.0f32,
             target_delay: Smooth::new(0.0f32),
-            delay_l: DelayLine::new(max_bufsize as usize, MAX_SPEED),
-            delay_r: DelayLine::new(max_bufsize as usize, MAX_SPEED),
+            delay_l: delay::Tap::new(0.001, max_delay),
+            delay_r: delay::Tap::new(0.001, max_delay),
             env: Envelope::new(),
 
             //scratch_buffer: [0; MAX_BLOCKSIZE],
-        }
+        };
+
+        ret.delay_l.set_sample_rate(sample_rate as f64);
+        ret.delay_r.set_sample_rate(sample_rate as f64);
+
+        ret
     }
 
     pub fn is_playing(&self) -> bool {
@@ -46,8 +49,8 @@ impl MidiVoice {
         self.target_delay.reset(Self::midi_to_seconds(self.note));
 
         // Clear the delay lines to prepare
-        self.delay_l.clear();
-        self.delay_r.clear();
+        self.delay_l.reset();
+        self.delay_r.reset();
 
         // Start the attack envelope
         self.env.attack(attack, self.sample_rate);
@@ -58,25 +61,22 @@ impl MidiVoice {
         self.env.release(release, self.sample_rate);
     }
 
-    //pitch_bend should be in semitones e.g. from -24 to +24
-    pub fn read(&mut self, pitch_bend: f32) -> (f32, f32) {
+    pub fn tick(&mut self, l: f32, r: f32, pitch_bend: f32) -> (f32, f32) {
         // Thing to multiply the delay by so it bends
         let pitch_bend_multiplier = 2.0f32.powf(pitch_bend / -12.0f32);
         self.target_delay.process(1); // Smoothed so it has portamento
-        let target_bufsize = pitch_bend_multiplier * self.target_delay[0] * self.sample_rate;
+        let bent_delay = pitch_bend_multiplier * self.target_delay[0]; // In seconds
 
-        let delay_l = self.delay_l.pop(target_bufsize);
-        let delay_r = self.delay_r.pop(target_bufsize);
+        let delay_l = self.delay_l.tick(&Frame::from([
+            l, bent_delay
+        ]))[0];
+        let delay_r = self.delay_l.tick(&Frame::from([
+            r, bent_delay
+        ]))[0];
 
-        // Envelope
         let env_val = self.env.next_sample();
 
         (delay_l*env_val, delay_r*env_val)
-    }
-
-    pub fn push(&mut self, l: f32, r: f32) {
-        self.delay_l.push(l);
-        self.delay_r.push(r);
     }
 
     pub fn get_midi_note(&self) -> u8 {
@@ -93,35 +93,6 @@ impl MidiVoice {
     pub fn set_portamento(&mut self, sample_rate: f32, portamento: f32) {
         self.target_delay.set_speed_ms(sample_rate, portamento);
     }
-
-    /*pub fn process(&mut self, inputs: &[&[f32]], outputs: &mut [&mut [f32]], pitch_bend: &[f32], portamento: &[f32], feedback: &[f32]) {
-        
-        let nframes: usize = outputs[0].len();
-        debug_assert!(nframes <= pitch_bend.len());
-        debug_assert!(nframes <= MAX_BLOCKSIZE);
-
-        // Turn pitch_bend into target_bufsize
-        for i in 0..nframes {
-            let pitch_bend_multiplier = 2.0f32.powf(pitch_bend[i] / -12.0f32);
-
-            self.target_delay.set_speed_ms(self.sample_rate, portamento[i]);
-            self.target_delay.process(1); // Smoothed so it has portamento
-
-            self.scratch_buffer[i] = (pitch_bend_multiplier * self.target_delay[0] * self.sample_rate).ceil() as usize;
-        }
-        
-        for ch in 0..2 {
-            debug_assert!(inputs[ch].len() == nframes);
-            debug_assert!(outputs[ch].len() == nframes);
-
-            self.delay_l.process(&inputs[ch], outputs[ch], &self.scratch_buffer, feedback);
-            self.delay_r.process(&inputs[ch], outputs[ch], &self.scratch_buffer, feedback);
-
-            for i in 0..nframes {
-                outputs[ch][i] *= self.env.next_sample();
-            }
-        }
-    }*/
 
 
     // Private
